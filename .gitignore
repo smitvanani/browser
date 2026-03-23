@@ -1,0 +1,31 @@
+node_modules/
+dist/
+build/
+
+# Environment & secrets
+.env
+.env.*
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Build artifacts
+*.dmg
+*.zip
+*.AppImage
+*.exe
+*.deb
+*.rpm
+
+# Logs
+*.log
+npm-debug.log*
