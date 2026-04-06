@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('browserAPI', {
   reload: () => ipcRenderer.invoke('tab-reload'),
   pinTab: (id, pinned) => ipcRenderer.invoke('tab-pin', id, pinned),
   getActiveTabInfo: () => ipcRenderer.invoke('tab-get-active-info'),
+  closeOtherTabs: (keepId) => ipcRenderer.invoke('tab-close-others', keepId),
 
   // Spaces
   getSpaces: () => ipcRenderer.invoke('spaces-get'),
@@ -63,30 +64,31 @@ contextBridge.exposeInMainWorld('browserAPI', {
   saveSettings: (settings) => ipcRenderer.invoke('settings-save', settings),
   injectCSS: (css) => ipcRenderer.invoke('inject-css', css),
 
-  // Events
-  onTabUpdate: (cb) => ipcRenderer.on('tab-updated', (e, d) => cb(d)),
-  onActiveTabChanged: (cb) => ipcRenderer.on('active-tab-changed', (e, d) => cb(d)),
-  onLoadingStateChanged: (cb) => ipcRenderer.on('loading-state-changed', (e, d) => cb(d)),
-  onSpacesUpdate: (cb) => ipcRenderer.on('spaces-updated', (e, d) => cb(d)),
-  onFindResult: (cb) => ipcRenderer.on('find-result', (e, d) => cb(d)),
-  onScreenshotDone: (cb) => ipcRenderer.on('screenshot-done', (e, d) => cb(d)),
-  onZoomChanged: (cb) => ipcRenderer.on('zoom-changed', (e, d) => cb(d)),
-  onSplitChanged: (cb) => ipcRenderer.on('split-changed', (e, d) => cb(d)),
-  onFocusChanged: (cb) => ipcRenderer.on('focus-changed', (e, d) => cb(d)),
-  onAudioStateChanged: (cb) => ipcRenderer.on('audio-state-changed', (e, d) => cb(d)),
-  onDownloadUpdate: (cb) => ipcRenderer.on('download-update', (e, d) => cb(d)),
-  onDownloadComplete: (cb) => ipcRenderer.on('download-complete', (e, d) => cb(d)),
-  onSidebarVisibility: (cb) => ipcRenderer.on('sidebar-visibility', (e, d) => cb(d)),
-  onShortcut: (cb) => ipcRenderer.on('shortcut', (e, d) => cb(d)),
-  onAutoCollapse: (cb) => ipcRenderer.on('auto-collapse-sidebar', () => cb()),
+  // Events (return unsubscribe functions to prevent listener leaks)
+  onTabUpdate: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('tab-updated', h); return () => ipcRenderer.removeListener('tab-updated', h) },
+  onActiveTabChanged: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('active-tab-changed', h); return () => ipcRenderer.removeListener('active-tab-changed', h) },
+  onLoadingStateChanged: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('loading-state-changed', h); return () => ipcRenderer.removeListener('loading-state-changed', h) },
+  onSpacesUpdate: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('spaces-updated', h); return () => ipcRenderer.removeListener('spaces-updated', h) },
+  onFindResult: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('find-result', h); return () => ipcRenderer.removeListener('find-result', h) },
+  onScreenshotDone: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('screenshot-done', h); return () => ipcRenderer.removeListener('screenshot-done', h) },
+  onZoomChanged: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('zoom-changed', h); return () => ipcRenderer.removeListener('zoom-changed', h) },
+  onSplitChanged: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('split-changed', h); return () => ipcRenderer.removeListener('split-changed', h) },
+  onFocusChanged: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('focus-changed', h); return () => ipcRenderer.removeListener('focus-changed', h) },
+  onAudioStateChanged: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('audio-state-changed', h); return () => ipcRenderer.removeListener('audio-state-changed', h) },
+  onDownloadUpdate: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('download-update', h); return () => ipcRenderer.removeListener('download-update', h) },
+  onDownloadComplete: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('download-complete', h); return () => ipcRenderer.removeListener('download-complete', h) },
+  onSidebarVisibility: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('sidebar-visibility', h); return () => ipcRenderer.removeListener('sidebar-visibility', h) },
+  onShortcut: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('shortcut', h); return () => ipcRenderer.removeListener('shortcut', h) },
+  onAutoCollapse: (cb) => { const h = () => cb(); ipcRenderer.on('auto-collapse-sidebar', h); return () => ipcRenderer.removeListener('auto-collapse-sidebar', h) },
+  onTabReopened: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('tab-reopened', h); return () => ipcRenderer.removeListener('tab-reopened', h) },
 
   // Pomodoro
   pomodoroStart: () => ipcRenderer.invoke('pomodoro-start'),
   pomodoroPause: () => ipcRenderer.invoke('pomodoro-pause'),
   pomodoroReset: () => ipcRenderer.invoke('pomodoro-reset'),
   pomodoroGet: () => ipcRenderer.invoke('pomodoro-get'),
-  onPomodoroTick: (cb) => ipcRenderer.on('pomodoro-tick', (e, d) => cb(d)),
-  onPomodoroDone: (cb) => ipcRenderer.on('pomodoro-done', (e, d) => cb(d)),
+  onPomodoroTick: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('pomodoro-tick', h); return () => ipcRenderer.removeListener('pomodoro-tick', h) },
+  onPomodoroDone: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('pomodoro-done', h); return () => ipcRenderer.removeListener('pomodoro-done', h) },
 
   // Picture in Picture
   togglePip: () => ipcRenderer.invoke('pip-toggle'),
@@ -117,15 +119,15 @@ contextBridge.exposeInMainWorld('browserAPI', {
   aiExplain: (text) => ipcRenderer.invoke('ai-explain', text),
   aiPageQA: (question) => ipcRenderer.invoke('ai-page-qa', question),
   aiGetSelection: () => ipcRenderer.invoke('ai-get-selection'),
-  onAiActionsExecuted: (cb) => ipcRenderer.on('ai-actions-executed', (e, d) => cb(d)),
+  onAiActionsExecuted: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('ai-actions-executed', h); return () => ipcRenderer.removeListener('ai-actions-executed', h) },
 
   // Ad Blocker
   adblockGetCount: () => ipcRenderer.invoke('adblock-get-count'),
   adblockToggle: (enabled) => ipcRenderer.invoke('adblock-toggle', enabled),
-  onAdBlocked: (cb) => ipcRenderer.on('ad-blocked', (e, d) => cb(d)),
+  onAdBlocked: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('ad-blocked', h); return () => ipcRenderer.removeListener('ad-blocked', h) },
 
   // AI Page Understanding
-  onPageInsights: (cb) => ipcRenderer.on('page-insights', (e, d) => cb(d)),
+  onPageInsights: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on('page-insights', h); return () => ipcRenderer.removeListener('page-insights', h) },
   aiPageInsight: (type) => ipcRenderer.invoke('ai-page-insight', type),
 
   // Tab reorder
@@ -168,4 +170,7 @@ contextBridge.exposeInMainWorld('browserAPI', {
 
   // History suggestions for URL bar
   historySuggest: (query) => ipcRenderer.invoke('history-suggest', query),
+
+  // Google search suggestions (safe server-side fetch)
+  searchSuggestions: (query) => ipcRenderer.invoke('search-suggestions', query),
 })

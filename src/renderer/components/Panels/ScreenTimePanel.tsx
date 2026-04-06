@@ -28,13 +28,20 @@ export default function ScreenTimePanel() {
     const b = api()
     if (!b?.getScreenTime) return
 
-    b.getScreenTime().then((data: Record<string, number>) => {
-      const sorted = Object.entries(data)
-        .sort((a, b) => b[1] - a[1])
-        .map(([domain, seconds]) => ({ domain, seconds }))
-      setEntries(sorted)
-      setTotalSeconds(sorted.reduce((acc, e) => acc + e.seconds, 0))
-    })
+    const fetchData = () => {
+      b.getScreenTime().then((data: Record<string, number>) => {
+        const sorted = Object.entries(data)
+          .sort((a, b) => b[1] - a[1])
+          .map(([domain, seconds]) => ({ domain, seconds }))
+        setEntries(sorted)
+        setTotalSeconds(sorted.reduce((acc, e) => acc + e.seconds, 0))
+      })
+    }
+
+    fetchData()
+    // Auto-refresh every 15 seconds while panel is open
+    const interval = setInterval(fetchData, 15000)
+    return () => clearInterval(interval)
   }, [screenTimePanelVisible])
 
   const maxTime = entries.length > 0 ? entries[0].seconds : 1

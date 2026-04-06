@@ -9,8 +9,14 @@ interface AiMessage {
 
 const api = () => (window as any).browserAPI
 
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 function formatMarkdown(text: string): string {
-  return text
+  // Escape HTML first to prevent injection, then apply markdown formatting
+  let safe = escapeHtml(text)
+  safe = safe
     .replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
@@ -19,6 +25,7 @@ function formatMarkdown(text: string): string {
     .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
     .replace(/(<li>[\s\S]*<\/li>)/g, '<ul>$1</ul>')
     .replace(/\n/g, '<br>')
+  return safe
 }
 
 function formatTime(ts: number): string {

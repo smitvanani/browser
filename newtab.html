@@ -237,7 +237,7 @@
     <div class="search-wrap">
       <div class="search-container">
         <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input class="search-bar" id="search" type="text" placeholder="Search the web or enter URL..." autocomplete="off" spellcheck="false" autofocus>
+        <input class="search-bar" id="search" type="text" placeholder="Search the web or enter URL..." autocomplete="off" spellcheck="false">
         <span class="search-hint">Enter</span>
       </div>
       <div class="search-suggestions" id="suggestions"></div>
@@ -253,6 +253,11 @@
   </div>
 
   <script>
+    // ═══ INITIAL THEME (prevent flash of wrong theme before settings inject) ═══
+    if (window.matchMedia('(prefers-color-scheme:dark)').matches) {
+      document.documentElement.setAttribute('data-theme', 'dark')
+    }
+
     // ═══ CLOCK ═══
     function updateClock() {
       const now = new Date()
@@ -265,7 +270,9 @@
       document.getElementById('date').textContent = `${days[now.getDay()]}, ${months[now.getMonth()]} ${now.getDate()}`
     }
     updateClock()
-    setInterval(updateClock, 10000)
+    // Sync to minute boundary so clock is never stale
+    const msToNextMin = (60 - new Date().getSeconds()) * 1000
+    setTimeout(() => { updateClock(); setInterval(updateClock, 60000) }, msToNextMin)
 
     // ═══ GREETING ═══
     function updateGreeting(name) {
@@ -295,6 +302,8 @@
     let selectedIdx = -1
     let currentSuggestions = []
 
+    function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML }
+
     function renderSuggestions(items) {
       currentSuggestions = items
       selectedIdx = -1
@@ -306,8 +315,8 @@
         <div class="suggest-item" data-idx="${i}">
           <span class="suggest-icon">${item.type === 'history' ? '\u{1F552}' : '\u{1F50D}'}</span>
           <div class="suggest-text">
-            <div class="suggest-title">${item.title || item.url}</div>
-            ${item.url ? `<div class="suggest-url">${item.url}</div>` : ''}
+            <div class="suggest-title">${esc(item.title || item.url)}</div>
+            ${item.url ? `<div class="suggest-url">${esc(item.url)}</div>` : ''}
           </div>
           ${item.type === 'history' ? '<span class="suggest-type">History</span>' : ''}
         </div>

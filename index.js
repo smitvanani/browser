@@ -1,3 +1,4 @@
+require('dotenv').config()
 const { app, BrowserWindow, BrowserView, ipcMain, session, clipboard, nativeImage, Menu, dialog } = require('electron')
 const path = require('path')
 const fs = require('fs')
@@ -38,7 +39,9 @@ function saveSession() {
         id: t.id, url: t.url, title: t.title, pinned: t.pinned
       }))
     }))
-    fs.writeFileSync(sessionPath, JSON.stringify({ spaces: data, activeSpaceId, nextSpaceId }))
+    const tmpPath = sessionPath + '.tmp'
+    fs.writeFileSync(tmpPath, JSON.stringify({ spaces: data, activeSpaceId, nextSpaceId }))
+    fs.renameSync(tmpPath, sessionPath)
   } catch (e) { console.error('[Session] Save error:', e) }
 }
 function loadSession() {
@@ -64,11 +67,26 @@ function saveBookmarks() {
 // ═══ HISTORY ═══
 const historyPath = path.join(app.getPath('userData'), 'history.json')
 let history = []
-function loadHistory() { try { history = JSON.parse(fs.readFileSync(historyPath, 'utf8')) } catch { history = [] } }
-function saveHistory() { try { fs.writeFileSync(historyPath, JSON.stringify(history)) } catch {} }
+let historyNextId = 1
+function loadHistory() {
+  try {
+    history = JSON.parse(fs.readFileSync(historyPath, 'utf8'))
+    // Recover next ID from existing entries
+    const maxId = history.reduce((max, h) => Math.max(max, typeof h.id === 'number' ? h.id : 0), 0)
+    historyNextId = maxId + 1
+  } catch { history = [] }
+}
+let historySaveTimeout = null
+function saveHistory() {
+  if (historySaveTimeout) return // throttle: max one write per second
+  historySaveTimeout = setTimeout(() => {
+    historySaveTimeout = null
+    try { fs.writeFileSync(historyPath, JSON.stringify(history)) } catch {}
+  }, 1000)
+}
 function addToHistory(url, title) {
   if (!url || url.startsWith('file://') || url.startsWith('about:')) return
-  history.unshift({ url, title: title || url, timestamp: Date.now(), id: Date.now() })
+  history.unshift({ url, title: title || url, timestamp: Date.now(), id: historyNextId++ })
   if (history.length > 5000) history = history.slice(0, 5000)
   saveHistory()
 }
@@ -233,7 +251,30 @@ function createBrowserView(url, space) {
   wc.on('page-favicon-updated', (e, favicons) => {
     if (favicons && favicons.length > 0) { tab.favicon = favicons[0]; sendTabUpdate() }
   })
-  wc.on('did-fail-load', (e, code, desc, url) => console.error(`[Tab ${id}] Load failed: ${url} (${code}: ${desc})`))
+  wc.on('did-fail-load', (e, code, desc, failedUrl) => {
+    console.error(`[Tab ${id}] Load failed: ${failedUrl} (${code}: ${desc})`)
+    // Don't show error for aborted loads (user navigated away) or subframe errors
+    if (code === -3 || code === 0) return
+    const errorHtml = `<!DOCTYPE html><html><head><style>
+      * { margin:0; padding:0; } body { height:100vh; display:flex; align-items:center; justify-content:center;
+      font-family:'Inter',system-ui,sans-serif; background:var(--content-bg,#faf8f5); color:#1a1a2e; }
+      .err { text-align:center; max-width:400px; padding:40px; }
+      .err-icon { font-size:48px; margin-bottom:16px; }
+      .err-title { font-size:18px; font-weight:700; margin-bottom:8px; }
+      .err-desc { font-size:13px; color:#8b8b9e; margin-bottom:20px; line-height:1.5; }
+      .err-url { font-size:11px; color:#b0b0c0; word-break:break-all; margin-bottom:20px; }
+      .err-btn { padding:10px 24px; border:none; border-radius:10px; background:#667eea; color:#fff;
+        font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; }
+      .err-btn:hover { filter:brightness(1.1); }
+    </style></head><body><div class="err">
+      <div class="err-icon">\u26A0\uFE0F</div>
+      <div class="err-title">Can\u2019t reach this page</div>
+      <div class="err-desc">${desc || 'The page failed to load.'}</div>
+      <div class="err-url">${(failedUrl || '').replace(/</g, '&lt;')}</div>
+      <button class="err-btn" onclick="location.reload()">Try Again</button>
+    </div></body></html>`
+    wc.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(errorHtml)}`).catch(() => {})
+  })
 
   // Right-click context menu (Chrome-like)
   wc.on('context-menu', (e, params) => {
@@ -299,6 +340,40 @@ function createBrowserView(url, space) {
     return { action: 'deny' }
   })
 
+  // Nova AI: intercept requests from injected script (registered once, outside did-finish-load)
+  wc.on('console-message', async (e, level, msg) => {
+    // Selection AI (Explain, Translate, Summarize, Ask)
+    if (msg.startsWith('__NOVA_AI__')) {
+      try {
+        const data = JSON.parse(msg.substring('__NOVA_AI__'.length))
+        const resp = await anthropic.messages.create({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 512,
+          messages: [{ role: 'user', content: data.prompt }]
+        })
+        const text = resp.content[0].text
+        wc.executeJavaScript(`window.postMessage({type:'nova-ai-response',text:${JSON.stringify(text)}},'*')`).catch(() => {})
+      } catch (err) {
+        wc.executeJavaScript(`window.postMessage({type:'nova-ai-error',text:${JSON.stringify('AI error: ' + err.message)}},'*')`).catch(() => {})
+      }
+    }
+    // Writing Assistant (Fix Grammar, Make Shorter, etc.)
+    if (msg.startsWith('__NOVA_WRITE__')) {
+      try {
+        const data = JSON.parse(msg.substring('__NOVA_WRITE__'.length))
+        const resp = await anthropic.messages.create({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 512,
+          messages: [{ role: 'user', content: data.prompt }]
+        })
+        const text = resp.content[0].text
+        wc.executeJavaScript(`window.postMessage({type:'nova-ai-write-response',text:${JSON.stringify(text)}},'*')`).catch(() => {})
+      } catch (err) {
+        wc.executeJavaScript(`window.postMessage({type:'nova-ai-error',text:${JSON.stringify('Write error: ' + err.message)}},'*')`).catch(() => {})
+      }
+    }
+  })
+
   wc.on('did-finish-load', () => {
     console.log(`[Tab ${id}] Loaded: ${tab.url}`)
     // Mouse back/forward buttons
@@ -311,39 +386,6 @@ function createBrowserView(url, space) {
         });
       }
     `).catch(() => {})
-    // Nova AI: intercept requests from injected script
-    wc.on('console-message', async (e, level, msg) => {
-      // Selection AI (Explain, Translate, Summarize, Ask)
-      if (msg.startsWith('__NOVA_AI__')) {
-        try {
-          const data = JSON.parse(msg.substring('__NOVA_AI__'.length))
-          const resp = await anthropic.messages.create({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 512,
-            messages: [{ role: 'user', content: data.prompt }]
-          })
-          const text = resp.content[0].text
-          wc.executeJavaScript(`window.postMessage({type:'nova-ai-response',text:${JSON.stringify(text)}},'*')`).catch(() => {})
-        } catch (err) {
-          wc.executeJavaScript(`window.postMessage({type:'nova-ai-error',text:${JSON.stringify('AI error: ' + err.message)}},'*')`).catch(() => {})
-        }
-      }
-      // Writing Assistant (Fix Grammar, Make Shorter, etc.)
-      if (msg.startsWith('__NOVA_WRITE__')) {
-        try {
-          const data = JSON.parse(msg.substring('__NOVA_WRITE__'.length))
-          const resp = await anthropic.messages.create({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 512,
-            messages: [{ role: 'user', content: data.prompt }]
-          })
-          const text = resp.content[0].text
-          wc.executeJavaScript(`window.postMessage({type:'nova-ai-write-response',text:${JSON.stringify(text)}},'*')`).catch(() => {})
-        } catch (err) {
-          wc.executeJavaScript(`window.postMessage({type:'nova-ai-error',text:${JSON.stringify('Write error: ' + err.message)}},'*')`).catch(() => {})
-        }
-      }
-    })
 
     // Inject Nova AI inline selection assistant
     if (!tab.url.startsWith('file://')) {
@@ -370,9 +412,9 @@ function createBrowserView(url, space) {
     }
   })
 
-  // Audio state
-  const audioCheck = setInterval(() => {
-    if (wc.isDestroyed()) { clearInterval(audioCheck); return }
+  // Audio state (store interval on tab for cleanup)
+  tab.audioInterval = setInterval(() => {
+    if (wc.isDestroyed()) { clearInterval(tab.audioInterval); return }
     const nowAudible = wc.isCurrentlyAudible()
     if (nowAudible !== tab.audible) {
       tab.audible = nowAudible
@@ -400,7 +442,7 @@ function switchToTab(id, space) {
   const activeTab = space.tabs.find(t => t.id === id)
   if (activeTab) {
     activeTab.view.setBounds(getContentBounds())
-    win.setTopBrowserView(activeTab.view)
+    try { win.setTopBrowserView(activeTab.view) } catch {}
     activeTab.view.webContents.focus()
     if (activeTab.title) win.setTitle(activeTab.title)
   }
@@ -425,6 +467,7 @@ function closeTabById(id) {
     closedTabs.push({ url: tab.url, title: tab.title })
     if (closedTabs.length > 20) closedTabs.shift()
   }
+  if (tab.audioInterval) clearInterval(tab.audioInterval)
   win.removeBrowserView(tab.view)
   tab.view.webContents.close()
   space.tabs.splice(index, 1)
@@ -451,13 +494,20 @@ function switchSpace(spaceId) {
 }
 
 // ═══ SEND TO RENDERER ═══
+let tabUpdateTimer = null
 function sendTabUpdate() {
   if (!win || win.isDestroyed()) return
-  const space = getActiveSpace()
-  win.webContents.send('tab-updated', {
-    tabs: space.tabs.map(t => ({ id: t.id, title: t.title, url: t.url, pinned: t.pinned, loading: t.loading, audible: t.audible, favicon: t.favicon })),
-    activeTabId: space.activeTabId
-  })
+  // Debounce: batch rapid updates (favicon, title, loading) into one send
+  if (tabUpdateTimer) return
+  tabUpdateTimer = setTimeout(() => {
+    tabUpdateTimer = null
+    if (!win || win.isDestroyed()) return
+    const space = getActiveSpace()
+    win.webContents.send('tab-updated', {
+      tabs: space.tabs.map(t => ({ id: t.id, title: t.title, url: t.url, pinned: t.pinned, loading: t.loading, audible: t.audible, favicon: t.favicon })),
+      activeTabId: space.activeTabId
+    })
+  }, 50)
 }
 
 function sendActiveTabChanged() {
@@ -585,18 +635,22 @@ function createWindow() {
           }
           spaces.push(space)
 
+          let restoredActiveTab = null
           for (const t of (savedSpace.tabs || [])) {
             if (t.url && !t.url.startsWith('file://')) {
               const tab = createBrowserView(t.url, space)
               if (t.pinned) tab.pinned = true
               if (t.title) tab.title = t.title
+              if (t.id === savedSpace.activeTabId) restoredActiveTab = tab.id
               restoredTabs++
             }
           }
 
-          // Restore active tab or default to last tab
-          if (savedSpace.activeTabId && space.tabs.find(t => t.id === savedSpace.activeTabId)) {
-            space.activeTabId = savedSpace.activeTabId
+          // Restore active tab using the new ID from the mapping
+          if (restoredActiveTab && space.tabs.find(t => t.id === restoredActiveTab)) {
+            space.activeTabId = restoredActiveTab
+          } else if (space.tabs.length > 0) {
+            space.activeTabId = space.tabs[space.tabs.length - 1].id
           }
 
           // If space ended up empty, give it a new tab
@@ -730,7 +784,7 @@ ipcMain.handle('overlay-hide', () => {
   const tab = space.tabs.find(t => t.id === space.activeTabId)
   if (tab) {
     tab.view.setBounds(getContentBounds())
-    win.setTopBrowserView(tab.view)
+    try { win.setTopBrowserView(tab.view) } catch {}
   }
 })
 
@@ -743,6 +797,23 @@ ipcMain.handle('tab-reload', () => { const wc = getActiveWC(); if (wc) wc.reload
 ipcMain.handle('tab-pin', (e, id, pinned) => {
   const space = getActiveSpace(); const t = space.tabs.find(t => t.id === id)
   if (t) { t.pinned = pinned; sendTabUpdate() }
+})
+ipcMain.handle('tab-close-others', (e, keepId) => {
+  const space = getActiveSpace()
+  const toClose = space.tabs.filter(t => t.id !== keepId && !t.pinned)
+  for (const t of toClose) {
+    if (t.url && !t.url.startsWith('file://')) {
+      closedTabs.push({ url: t.url, title: t.title })
+      if (closedTabs.length > 20) closedTabs.shift()
+    }
+    if (t.audioInterval) clearInterval(t.audioInterval)
+    win.removeBrowserView(t.view)
+    t.view.webContents.close()
+  }
+  space.tabs = space.tabs.filter(t => t.id === keepId || t.pinned)
+  if (space.activeTabId !== keepId) switchToTab(keepId, space)
+  else sendTabUpdate()
+  return true
 })
 ipcMain.handle('tab-reorder', (e, fromId, toId) => {
   const space = getActiveSpace()
@@ -773,7 +844,7 @@ ipcMain.handle('space-switch', (e, id) => { switchSpace(id); return id })
 ipcMain.handle('space-delete', (e, id) => {
   if (spaces.length <= 1) return false
   const s = spaces.find(s => s.id === id); if (!s) return false
-  for (const t of s.tabs) { win.removeBrowserView(t.view); t.view.webContents.close() }
+  for (const t of s.tabs) { if (t.audioInterval) clearInterval(t.audioInterval); win.removeBrowserView(t.view); t.view.webContents.close() }
   spaces = spaces.filter(s => s.id !== id)
   if (activeSpaceId === id) switchSpace(spaces[0].id)
   else sendSpacesUpdate()
@@ -874,6 +945,9 @@ ipcMain.handle('tab-reopen', () => {
   if (closedTabs.length === 0) return null
   const last = closedTabs.pop()
   createBrowserView(last.url, getActiveSpace())
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('tab-reopened', { title: last.title || 'Tab' })
+  }
   return last
 })
 
@@ -1185,17 +1259,25 @@ function loadScreenTime() {
     screenTime = data[today] || {}
   } catch { screenTime = {} }
 }
+let screenTimeSaveTimer = null
 function saveScreenTime() {
-  try {
-    const today = new Date().toISOString().slice(0, 10)
-    let allData = {}
-    try { allData = JSON.parse(fs.readFileSync(screenTimePath, 'utf8')) } catch {}
-    allData[today] = screenTime
-    // Keep only last 7 days
-    const keys = Object.keys(allData).sort().reverse().slice(0, 7)
-    const trimmed = {}; keys.forEach(k => trimmed[k] = allData[k])
-    fs.writeFileSync(screenTimePath, JSON.stringify(trimmed, null, 2))
-  } catch (e) { console.error('Screen time save error:', e) }
+  // Debounce + async write to avoid blocking main thread
+  if (screenTimeSaveTimer) return
+  screenTimeSaveTimer = setTimeout(() => {
+    screenTimeSaveTimer = null
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      let allData = {}
+      try { allData = JSON.parse(fs.readFileSync(screenTimePath, 'utf8')) } catch {}
+      allData[today] = screenTime
+      // Keep only last 7 days
+      const keys = Object.keys(allData).sort().reverse().slice(0, 7)
+      const trimmed = {}; keys.forEach(k => trimmed[k] = allData[k])
+      const tmpPath = screenTimePath + '.tmp'
+      fs.writeFileSync(tmpPath, JSON.stringify(trimmed, null, 2))
+      fs.renameSync(tmpPath, screenTimePath)
+    } catch (e) { console.error('Screen time save error:', e) }
+  }, 2000)
 }
 
 function trackScreenTime() {
@@ -1477,7 +1559,9 @@ async function executeAITool(name, input) {
     }
     case 'read_file': {
       try {
-        const filePath = input.path.startsWith('/') ? input.path : path.join(app.getPath('home'), input.path)
+        let filePath = input.path
+        if (filePath.startsWith('~/')) filePath = path.join(app.getPath('home'), filePath.substring(2))
+        else if (!filePath.startsWith('/')) filePath = path.join(app.getPath('home'), filePath)
         const content = fs.readFileSync(filePath, 'utf8')
         return `File contents (${filePath}):\n${content.substring(0, 5000)}`
       } catch(e) { return `Error reading file: ${e.message}` }
@@ -1657,6 +1741,9 @@ ipcMain.handle('right-panel-toggle', (e, width) => {
 
 // AI Chat with browser control
 ipcMain.handle('ai-chat', async (e, message) => {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return { text: 'Nova AI requires an Anthropic API key. Add `ANTHROPIC_API_KEY` to your `.env` file and restart Nova.', actions: [] }
+  }
   // Build messages array
   aiChatHistory.push({ role: 'user', content: message })
 
@@ -1729,6 +1816,28 @@ ipcMain.handle('ai-chat', async (e, message) => {
     console.error('[AI] Error:', err.message)
     return { text: `Oops, something went wrong: ${err.message}`, actions: [] }
   }
+})
+
+// Google search suggestions (safe server-side fetch, no JSONP)
+ipcMain.handle('search-suggestions', async (e, query) => {
+  if (!query || query.length < 2) return []
+  try {
+    const { net } = require('electron')
+    const url = `https://suggestqueries.google.com/complete/search?client=firefox&q=${encodeURIComponent(query)}`
+    const body = await new Promise((resolve, reject) => {
+      const request = net.request(url)
+      let data = ''
+      request.on('response', (response) => {
+        response.on('data', (chunk) => { data += chunk.toString() })
+        response.on('end', () => resolve(data))
+      })
+      request.on('error', reject)
+      setTimeout(() => reject(new Error('timeout')), 3000)
+      request.end()
+    })
+    const parsed = JSON.parse(body)
+    return (parsed[1] || []).slice(0, 5)
+  } catch { return [] }
 })
 
 // Quick AI answer for URL bar
@@ -1837,7 +1946,7 @@ loadScreenTime()
 loadSiteNotes()
 
 // ═══ AD BLOCKER ═══
-const AD_DOMAINS = [
+const AD_DOMAINS_LIST = [
   'doubleclick.net','googlesyndication.com','googleadservices.com','google-analytics.com',
   'googletagmanager.com','googletagservices.com','pagead2.googlesyndication.com',
   'adservice.google.com','ads.google.com',
@@ -1865,6 +1974,7 @@ const AD_DOMAINS = [
   'revcontent.com','mgid.com','content.ad',
   'track.adform.net','serving-sys.com','sizmek.com'
 ]
+const AD_DOMAINS = new Set(AD_DOMAINS_LIST)
 
 let blockedCounts = {} // tabId -> count
 let totalBlocked = 0
@@ -1873,8 +1983,14 @@ function setupAdBlocker() {
   const { webRequest } = session.defaultSession
 
   webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, callback) => {
-    const url = details.url.toLowerCase()
-    const shouldBlock = AD_DOMAINS.some(domain => url.includes(domain))
+    if (!settings.adBlockEnabled) { callback({ cancel: false }); return }
+    let urlHost = ''
+    try { urlHost = new URL(details.url).hostname } catch { callback({ cancel: false }); return }
+    // Check if any ad domain matches the URL hostname
+    let shouldBlock = false
+    for (const domain of AD_DOMAINS) {
+      if (urlHost === domain || urlHost.endsWith('.' + domain)) { shouldBlock = true; break }
+    }
 
     if (shouldBlock) {
       // Track blocked count
@@ -1898,6 +2014,20 @@ function setupAdBlocker() {
 }
 
 app.setName('Nova')
+
+// Prevent multiple instances — focus existing window instead
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (win) {
+      if (win.isMinimized()) win.restore()
+      win.focus()
+    }
+  })
+}
+
 app.whenReady().then(() => {
   // Custom menu to capture Cmd+, and other shortcuts macOS intercepts
   const template = [
@@ -1955,6 +2085,9 @@ app.whenReady().then(() => {
             if (closedTabs.length > 0) {
               const last = closedTabs.pop()
               createBrowserView(last.url, getActiveSpace())
+              if (win && !win.isDestroyed()) {
+                win.webContents.send('tab-reopened', { title: last.title || 'Tab' })
+              }
             }
           }
         },

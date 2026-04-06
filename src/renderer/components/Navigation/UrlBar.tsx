@@ -128,28 +128,19 @@ export default function UrlBar({ sidebarWidth }: UrlBarProps) {
       ])
       matchingHistory = matchingHistory.filter(h => !usedUrls.has(h.url))
 
-      // Fetch Google suggestions
-      const googlePromise = new Promise<Suggestion[]>((resolve) => {
-        const old = document.getElementById('suggest-script')
-        if (old) old.remove()
-
-        const timeout = setTimeout(() => resolve([]), 1500)
-        ;(window as any).handleSuggestions = (data: any) => {
-          clearTimeout(timeout)
-          resolve(((data[1] || []) as string[]).slice(0, 5).map((text: string) => ({
+      // Fetch Google suggestions via safe IPC (no JSONP script injection)
+      let googleSuggestions: Suggestion[] = []
+      try {
+        const api = browserAPI()
+        if (api?.searchSuggestions) {
+          const results = await api.searchSuggestions(query)
+          googleSuggestions = (results || []).map((text: string) => ({
             type: 'google' as const,
             label: text,
             icon: '\u{1F50D}'
-          })))
+          }))
         }
-
-        const s = document.createElement('script')
-        s.id = 'suggest-script'
-        s.src = `https://suggestqueries.google.com/complete/search?client=chrome&q=${encodeURIComponent(query)}&callback=handleSuggestions`
-        document.head.appendChild(s)
-      })
-
-      const googleSuggestions = await googlePromise
+      } catch {}
 
       const all = [...matchingTabs, ...matchingHistory, ...matchingBookmarks, ...googleSuggestions]
       setSuggestions(all)

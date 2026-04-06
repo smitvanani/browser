@@ -166,6 +166,8 @@ export function BrowserProvider({ children }: { children: ReactNode }) {
     const b = api()
     if (!b) return
 
+    const cleanups: (() => void)[] = []
+
     // Load settings
     b.getSettings().then((s: Settings) => {
       setSettings(s)
@@ -178,68 +180,73 @@ export function BrowserProvider({ children }: { children: ReactNode }) {
     // Load bookmarks
     b.getBookmarks().then((bm: any[]) => setBookmarks(bm || []))
 
-    // IPC listeners
-    b.onTabUpdate((data: any) => {
+    // IPC listeners (collect cleanup functions)
+    cleanups.push(b.onTabUpdate((data: any) => {
       setTabs(data.tabs || [])
       setActiveTabId(data.activeTabId)
-    })
+    }))
 
-    b.onActiveTabChanged((data: any) => {
+    cleanups.push(b.onActiveTabChanged((data: any) => {
       setActiveTabId(data.activeTabId ?? data.id)
-    })
+    }))
 
     let loadingTimeout: ReturnType<typeof setTimeout> | null = null
-    b.onLoadingStateChanged((data: any) => {
+    cleanups.push(b.onLoadingStateChanged((data: any) => {
       if (data.loading) {
         loadingTimeout = setTimeout(() => setIsLoading(true), 300)
       } else {
         if (loadingTimeout) clearTimeout(loadingTimeout)
         setIsLoading(false)
       }
-    })
+    }))
 
-    b.onSpacesUpdate((data: any) => {
+    cleanups.push(b.onSpacesUpdate((data: any) => {
       setSpaces(data.spaces || [])
       setActiveSpaceId(data.activeSpaceId)
-    })
+    }))
 
-    b.onZoomChanged((data: any) => {
+    cleanups.push(b.onZoomChanged((data: any) => {
       setZoomLevel(data.zoom)
       if (zoomTimeout.current) clearTimeout(zoomTimeout.current)
       zoomTimeout.current = setTimeout(() => setZoomLevel(null), 1500)
-    })
+    }))
 
-    b.onSplitChanged((data: any) => {
+    cleanups.push(b.onSplitChanged((data: any) => {
       setSplitActive(data.active)
-    })
+    }))
 
-    b.onFocusChanged((data: any) => {
+    cleanups.push(b.onFocusChanged((data: any) => {
       setSidebarHidden(data.active)
-    })
+    }))
 
-    b.onSidebarVisibility((data: any) => {
+    cleanups.push(b.onSidebarVisibility((data: any) => {
       setSidebarHidden(data.hidden)
-    })
+    }))
 
-    b.onAutoCollapse(() => {
+    cleanups.push(b.onAutoCollapse(() => {
       setSidebarCollapsed(true)
-    })
+    }))
 
-    b.onDownloadUpdate((data: any) => {
+    cleanups.push(b.onDownloadUpdate((data: any) => {
       setDownloads(data.downloads || [])
-    })
+    }))
 
-    b.onScreenshotDone(() => {
+    cleanups.push(b.onScreenshotDone(() => {
       setScreenshotFlash(true)
       setTimeout(() => setScreenshotFlash(false), 400)
-    })
+    }))
 
-    b.onAdBlocked((data: any) => {
+    cleanups.push(b.onAdBlocked((data: any) => {
       setAdBlockCount(data.count || 0)
-    })
+    }))
+
+    cleanups.push(b.onTabReopened((data: any) => {
+      setToast({ icon: '\u21A9', text: `Reopened: ${data.title}` })
+      setTimeout(() => setToast(null), 2500)
+    }))
 
     // Keyboard shortcuts from native menu
-    b.onShortcut((action: string) => {
+    cleanups.push(b.onShortcut((action: string) => {
       switch (action) {
         case 'find': setFindBarVisible(true); api()?.overlayShow(); break
         case 'url': setUrlBarVisible(true); api()?.overlayShow(); break
@@ -270,7 +277,7 @@ export function BrowserProvider({ children }: { children: ReactNode }) {
           (async () => {
             const info = await api()?.getActiveTabInfo()
             if (info?.url && !info.url.startsWith('file://')) {
-              const exists = await api()?.checkBookmark(info.url)
+              const exists = await api()?.isBookmarked(info.url)
               if (exists) { await api()?.removeBookmark(info.url); setCurrentIsBookmarked(false) }
               else { await api()?.addBookmark(info.url, info.title); setCurrentIsBookmarked(true) }
               const bm = await api()?.getBookmarks()
@@ -283,29 +290,45 @@ export function BrowserProvider({ children }: { children: ReactNode }) {
           setTimeout(() => api()?.aiSummarize(), 300)
           break
       }
-    })
+    }))
 
     // Download complete toast
-    b.onDownloadComplete((data: { filename: string }) => {
+    cleanups.push(b.onDownloadComplete((data: { filename: string }) => {
       setToast({ icon: '\u2705', text: `Downloaded: ${data.filename}` })
       setTimeout(() => setToast(null), 3000)
-    })
+    }))
+
+    return () => { cleanups.forEach(fn => fn && fn()) }
   }, [])
 
   // Direct keyboard shortcuts (fallback when menu accelerators don't reach renderer)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape closes any open panel/overlay
+      if (e.key === 'Escape') {
+        if (findBarVisible) { setFindBarVisible(false); api()?.overlayHide(); api()?.stopFind(); return }
+        if (urlBarVisible) { setUrlBarVisible(false); api()?.overlayHide(); return }
+        if (settingsPanelVisible) { setSettingsPanelVisible(false); api()?.rightPanelToggle(0); return }
+        if (aiPanelVisible) { setAiPanelVisible(false); api()?.aiPanelToggle(false); return }
+        if (notesPanelVisible) { setNotesPanelVisible(false); api()?.rightPanelToggle(0); return }
+        if (screenTimePanelVisible) { setScreenTimePanelVisible(false); api()?.rightPanelToggle(0); return }
+        if (historyPanelVisible) { setHistoryPanelVisible(false); api()?.rightPanelToggle(0); return }
+        if (downloadsPanelVisible) { setDownloadsPanelVisible(false); api()?.rightPanelToggle(0); return }
+        if (pomodoroVisible) { setPomodoroVisible(false); return }
+        return
+      }
+
       const meta = e.metaKey || e.ctrlKey
       if (!meta) return
 
-      else if (e.key === 'l') { e.preventDefault(); setUrlBarVisible(true); api()?.overlayShow() }
+      if (e.key === 'l') { e.preventDefault(); setUrlBarVisible(true); api()?.overlayShow() }
       else if (e.key === 'f' && !e.shiftKey) { e.preventDefault(); setFindBarVisible(true); api()?.overlayShow() }
       else if (e.key === ',') { e.preventDefault(); setSettingsPanelVisible(v => !v) }
       else if (e.key === 'j') { e.preventDefault(); setAiPanelVisible(v => { const next = !v; api()?.aiPanelToggle(next); return next }) }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
+  }, [findBarVisible, urlBarVisible, settingsPanelVisible, aiPanelVisible, notesPanelVisible, screenTimePanelVisible, historyPanelVisible, downloadsPanelVisible, pomodoroVisible])
 
   // Theme effect
   useEffect(() => {

@@ -31,6 +31,16 @@ export default function NotesPanel() {
     }
   }, [notesPanelVisible, activeTabId, tabs])
 
+  // Auto-save when panel closes
+  const prevVisible = React.useRef(notesPanelVisible)
+  useEffect(() => {
+    if (prevVisible.current && !notesPanelVisible && domain && note !== undefined) {
+      const b = api()
+      if (b?.saveSiteNotes) b.saveSiteNotes(domain, note)
+    }
+    prevVisible.current = notesPanelVisible
+  }, [notesPanelVisible])
+
   const handleSave = async () => {
     if (!domain) return
     const b = api()

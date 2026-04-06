@@ -10,6 +10,8 @@ function isSecure(url: string): boolean {
   return url.startsWith('https://')
 }
 
+const browserAPI = () => (window as any).browserAPI
+
 export default function DragRegion() {
   const { goBack, goForward, reload, toggleSidebar, sidebarCollapsed, showUrlBar, tabs, activeTabId, isLoading } = useBrowser()
 
@@ -33,7 +35,7 @@ export default function DragRegion() {
               <polyline points="9 18 15 12 9 6"/>
             </svg>
           </button>
-          <button className="nav-btn" title={isLoading ? 'Stop' : 'Reload'} onClick={reload}>
+          <button className="nav-btn" title={isLoading ? 'Stop' : 'Reload'} onClick={() => isLoading ? browserAPI()?.stopLoading() : reload()}>
             {isLoading ? (
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>

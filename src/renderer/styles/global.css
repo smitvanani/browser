@@ -235,6 +235,15 @@
     .space-dot.active { transform:scale(1.05); }
     .space-dot.active::after { border-color:var(--text-primary); }
     .space-dot:active { transform:scale(0.9); transition-duration:0.1s; }
+    .space-dot-count {
+      position:absolute; top:-4px; right:-4px;
+      min-width:15px; height:15px; border-radius:8px;
+      background:var(--sidebar-bg); color:var(--text-secondary);
+      font-size:9px; font-weight:700; display:flex;
+      align-items:center; justify-content:center; padding:0 3px;
+      box-shadow:0 1px 4px rgba(0,0,0,0.15);
+      pointer-events:none; line-height:1;
+    }
     .space-add {
       width:34px; height:34px; border-radius:12px; cursor:pointer;
       border:2px dashed var(--border-strong); background:transparent;
@@ -804,6 +813,108 @@
     .st-item-bar { flex:1; height:4px; background:var(--border); border-radius:2px; overflow:hidden; min-width:60px; }
     .st-item-bar-fill { height:100%; border-radius:2px; }
     .st-item img { width:16px; height:16px; border-radius:3px; }
+
+    /* ═══ HISTORY PANEL ═══ */
+    .history-panel {
+      position:fixed; top:0; right:0; width:420px; max-width:90%; height:100%;
+      background:var(--sidebar-bg); border-left:1px solid var(--border);
+      z-index:253; transform:translateX(100%); transition:transform 0.35s cubic-bezier(0.22,1,0.36,1);
+      display:flex; flex-direction:column;
+    }
+    .history-panel.visible { transform:translateX(0); }
+    .panel-header {
+      padding:20px 20px 14px; border-bottom:1px solid var(--border);
+      display:flex; align-items:center; justify-content:space-between;
+    }
+    .panel-header h3 { font-size:14px; font-weight:700; color:var(--text-primary); margin:0; }
+    .panel-close-btn {
+      background:transparent; border:none; color:var(--text-hint);
+      font-size:18px; cursor:pointer; padding:4px 8px; border-radius:6px; transition:all 0.15s;
+    }
+    .panel-close-btn:hover { color:var(--text-primary); background:var(--sidebar-hover); }
+    .panel-search {
+      width:100%; padding:10px 14px; border:1px solid var(--border);
+      border-radius:var(--radius-md); background:var(--card-bg);
+      font-size:13px; font-family:'Inter', sans-serif; color:var(--text-primary);
+      outline:none; box-sizing:border-box;
+    }
+    .panel-search:focus { border-color:var(--accent, #667eea); }
+    .panel-body { flex:1; overflow-y:auto; padding:16px; }
+    .panel-empty { text-align:center; padding:40px; color:var(--text-hint); font-size:13px; }
+    .history-date-label {
+      font-size:11px; font-weight:700; color:var(--text-hint);
+      text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; padding:0 4px;
+    }
+    .history-item {
+      display:flex; align-items:center; gap:10px; padding:10px 14px;
+      cursor:pointer; transition:background 0.15s;
+    }
+    .history-item:hover { background:var(--sidebar-hover); }
+    .history-item + .history-item { border-top:1px solid var(--border); }
+    .history-item-title {
+      font-size:13px; font-weight:500; color:var(--text-primary);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .history-item-domain {
+      font-size:11px; color:var(--text-hint);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .history-item-time { font-size:11px; color:var(--text-hint); flex-shrink:0; }
+    .history-item-delete {
+      background:transparent; border:none; color:var(--text-hint);
+      cursor:pointer; padding:2px 6px; border-radius:4px; font-size:14px;
+      flex-shrink:0; line-height:1; transition:all 0.15s;
+    }
+    .history-item-delete:hover { color:#f5576c; background:var(--sidebar-hover); }
+    .panel-footer { padding:12px 16px 16px; border-top:1px solid var(--border); }
+    .clear-all-btn {
+      width:100%; padding:10px 0; border:none; border-radius:var(--radius-md);
+      background:var(--sidebar-hover); color:#f5576c;
+      font-size:13px; font-weight:600; cursor:pointer; transition:all 0.2s;
+    }
+    .clear-all-btn:hover { background:#f5576c; color:#fff; }
+    .clear-all-btn.confirming { background:#f5576c; color:#fff; }
+
+    /* ═══ DOWNLOADS PANEL ═══ */
+    .downloads-panel {
+      position:fixed; top:0; right:0; width:420px; max-width:90%; height:100%;
+      background:var(--sidebar-bg); border-left:1px solid var(--border);
+      z-index:253; transform:translateX(100%); transition:transform 0.35s cubic-bezier(0.22,1,0.36,1);
+      display:flex; flex-direction:column;
+    }
+    .downloads-panel.visible { transform:translateX(0); }
+    .dl-item { padding:14px 16px; margin-bottom:8px; }
+    .dl-item-row { display:flex; align-items:flex-start; gap:12px; }
+    .dl-icon {
+      width:36px; height:36px; border-radius:8px; background:var(--sidebar-hover);
+      display:flex; align-items:center; justify-content:center;
+      flex-shrink:0; color:var(--text-secondary);
+    }
+    .dl-filename {
+      font-size:13px; font-weight:600; color:var(--text-primary);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .dl-meta { display:flex; align-items:center; gap:8px; margin-top:4px; }
+    .dl-size { font-size:11px; color:var(--text-hint); }
+    .dl-status { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.3px; }
+    .dl-progress {
+      margin-top:8px; height:4px; border-radius:2px;
+      background:var(--sidebar-hover); overflow:hidden;
+    }
+    .dl-progress-fill {
+      height:100%; border-radius:2px; background:var(--accent, #667eea);
+      transition:width 0.3s ease;
+    }
+    .dl-date { font-size:11px; color:var(--text-hint); margin-top:6px; }
+    .dl-actions { display:flex; gap:8px; margin-top:10px; }
+    .dl-action-btn {
+      padding:5px 14px; border:none; border-radius:var(--radius-md);
+      font-size:11px; font-weight:600; cursor:pointer; transition:filter 0.2s;
+    }
+    .dl-action-primary { background:var(--accent, #667eea); color:#fff; }
+    .dl-action-primary:hover { filter:brightness(1.1); }
+    .dl-action-secondary { background:var(--sidebar-hover); color:var(--text-secondary); }
+    .dl-action-secondary:hover { background:var(--content-bg); }
 
     /* ═══ AI PANEL ═══ */
     @keyframes typingBounce {

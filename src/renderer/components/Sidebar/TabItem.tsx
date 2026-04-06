@@ -41,7 +41,13 @@ export default function TabItem({ tab }: TabItemProps) {
   const [faviconError, setFaviconError] = useState(false)
 
   const isActive = tab.id === activeTabId
+  // Prefer the favicon from the page itself (pushed via page-favicon-updated), fall back to Google
   const faviconUrl = tab.favicon || getFaviconUrl(tab.url)
+  // Reset error state when favicon changes
+  const prevFavicon = React.useRef(faviconUrl)
+  React.useEffect(() => {
+    if (prevFavicon.current !== faviconUrl) { setFaviconError(false); prevFavicon.current = faviconUrl }
+  }, [faviconUrl])
   const domain = getDomain(tab.url)
   const displayTitle = isNewTabUrl(tab.url) ? 'New Tab' : tab.title
 

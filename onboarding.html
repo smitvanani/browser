@@ -222,7 +222,7 @@
 
     function renderQL(){const el=document.getElementById('q-grid'),cnt=document.getElementById('q-counter');el.innerHTML='';const max=choices.quickLinks.length>=6;qlinks.forEach(q=>{const sel=choices.quickLinks.some(l=>l.url===q.u);const c=document.createElement('div');c.className='q-card'+(sel?' sel':'')+(max&&!sel?' maxed':'');const domain=q.u.replace(/https?:\/\//,'').split('/')[0];c.innerHTML='<div class="q-icon"><img src="https://www.google.com/s2/favicons?domain='+domain+'&sz=64" onerror="this.style.display=\'none\'"></div><div class="q-name">'+q.n+'</div>';c.onclick=()=>{if(sel)choices.quickLinks=choices.quickLinks.filter(l=>l.url!==q.u);else if(choices.quickLinks.length<6)choices.quickLinks.push({name:q.n,url:q.u});renderQL()};el.appendChild(c)});cnt.textContent=choices.quickLinks.length+' / 6 selected'}
 
-    function boom(){const c=document.getElementById('confetti');c.innerHTML='';const colors=['#667eea','#764ba2','#f5576c','#fda085','#ffd93d','#6bcf7f','#66a6ff','#ff6b6b','#fbc2eb','#89f7fe'];for(let i=0;i<120;i++){const p=document.createElement('div');p.className='confetti-piece';p.style.left=Math.random()*100+'%';p.style.background=colors[Math.floor(Math.random()*colors.length)];p.style.width=p.style.height=(4+Math.random()*8)+'px';p.style.borderRadius=Math.random()>0.5?'50%':'2px';p.style.animationDuration=(2+Math.random()*3)+'s';p.style.animationDelay=Math.random()*1.5+'s';c.appendChild(p)}}
+    function boom(){const c=document.getElementById('confetti');c.innerHTML='';const colors=['#667eea','#764ba2','#f5576c','#fda085','#ffd93d','#6bcf7f','#66a6ff','#ff6b6b','#fbc2eb','#89f7fe'];for(let i=0;i<120;i++){const p=document.createElement('div');p.className='confetti-piece';p.style.left=Math.random()*100+'%';p.style.background=colors[Math.floor(Math.random()*colors.length)];p.style.width=p.style.height=(4+Math.random()*8)+'px';p.style.borderRadius=Math.random()>0.5?'50%':'2px';p.style.animationDuration=(2+Math.random()*3)+'s';p.style.animationDelay=Math.random()*1.5+'s';c.appendChild(p)};setTimeout(()=>{c.innerHTML=''},6000)}
 
     function go(n){if(n<0||n>=TOTAL)return;const prev=document.getElementById('step-'+cur);prev.classList.remove('active');prev.classList.add('exit');cur=n;renderProgress();setTimeout(()=>{prev.classList.remove('exit');document.getElementById('step-'+cur).classList.add('active');if(cur===1)setTimeout(()=>document.getElementById('name-input').focus(),400);if(cur===2)renderThemes();if(cur===3)renderEngines();if(cur===4)renderQL();if(cur===5){const nm=choices.userName;document.getElementById('done-title').textContent=nm?'let\'s go, '+nm+'!':'you\'re all set!';document.getElementById('done-sub').textContent=nm?'nova is personalized and ready':'nova is ready for you';const sum=document.getElementById('done-summary');sum.innerHTML='';[{v:(themes.find(t=>t.v===choices.accentColor)||{}).n||'Grape',l:'Theme'},{v:(engines.find(e=>e.v===choices.searchEngine)||{}).n||'Google',l:'Search'},{v:choices.quickLinks.length+' sites',l:'Links'}].forEach(it=>{const d=document.createElement('div');d.className='d-card';d.innerHTML='<div class="d-card-val">'+it.v+'</div><div class="d-card-label">'+it.l+'</div>';sum.appendChild(d)});boom()}},350)}
 
@@ -239,7 +239,18 @@
     document.getElementById('engine-next').onclick=()=>go(4)
     document.getElementById('ql-next').onclick=()=>go(5)
     document.getElementById('go-btn').onclick=finish
-    document.getElementById('skip-btn').onclick=finish
+    document.getElementById('skip-btn').onclick=()=>{
+      // Set sensible defaults when skipping
+      if(choices.quickLinks.length===0){
+        choices.quickLinks=[
+          {name:'YouTube',url:'https://youtube.com'},
+          {name:'GitHub',url:'https://github.com'},
+          {name:'Google',url:'https://google.com'},
+          {name:'Reddit',url:'https://reddit.com'}
+        ]
+      }
+      finish()
+    }
 
     // Parallax
     let mx=0,my=0;document.addEventListener('mousemove',e=>{mx=(e.clientX/innerWidth-0.5)*2;my=(e.clientY/innerHeight-0.5)*2});(function anim(){document.querySelectorAll('.blob').forEach((b,i)=>{const s=(i+1)*12;b.style.marginLeft=(mx*s)+'px';b.style.marginTop=(my*s)+'px'});requestAnimationFrame(anim)})()

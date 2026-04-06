@@ -32,8 +32,8 @@ export default function FindBar() {
     hideFindBar()
   }
 
-  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value
+  const handleInput = (e: React.FormEvent<HTMLInputElement>) => {
+    const value = (e.target as HTMLInputElement).value
     if (value) {
       browserAPI()?.findInPage(value)
     } else {
